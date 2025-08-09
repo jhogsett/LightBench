@@ -56,6 +56,7 @@ Adafruit_MLX90614 mlx = Adafruit_MLX90614();
 
 OperationMode currentMode = MODE_LIGHT_LEVEL;
 uint8_t contrast = 8;  // Default contrast (0-15)
+bool whiteLedOn = true;  // Default white LED on
 
 // LED color palette for light meter: 4 green, 3 amber, 1 red
 uint32_t meterColors[LED_COUNT] = {
@@ -108,7 +109,7 @@ void setup() {
   
   // Initialize TCS LED control pin
   pinMode(TCS_LED_PIN, OUTPUT);
-  digitalWrite(TCS_LED_PIN, LOW);
+  digitalWrite(TCS_LED_PIN, whiteLedOn ? HIGH : LOW);
   
   // Initialize sensors
   if (!lightMeter.begin()) {
@@ -163,8 +164,12 @@ void showMenu() {
   Serial.println(F("T - Temperature Mode"));
   Serial.println(F("+ - Increase Contrast"));
   Serial.println(F("- - Decrease Contrast"));
+  Serial.println(F("W - Toggle White LED"));
+  Serial.println(F("H - Show this menu"));
   Serial.print(F("Current contrast: "));
-  Serial.println(contrast);
+  Serial.print(contrast);
+  Serial.print(F(", White LED: "));
+  Serial.println(whiteLedOn ? F("ON") : F("OFF"));
   Serial.println();
 }
 
@@ -181,7 +186,7 @@ void handleSerialInput() {
     case 'c':
       currentMode = MODE_RGB_COLOR;
       Serial.println(F("Switched to RGB Color Mode"));
-      digitalWrite(TCS_LED_PIN, HIGH);  // Turn on white LED
+      digitalWrite(TCS_LED_PIN, whiteLedOn ? HIGH : LOW);  // Use white LED state
       // Clear color sample arrays for clean start
       memset(colorSamples, 0, sizeof(colorSamples));
       colorSampleIndex = 0;
@@ -190,7 +195,7 @@ void handleSerialInput() {
     case 't':
       currentMode = MODE_TEMPERATURE;
       Serial.println(F("Switched to Temperature Mode"));
-      digitalWrite(TCS_LED_PIN, LOW);   // Turn off white LED
+      digitalWrite(TCS_LED_PIN, LOW);   // Always turn off white LED for temperature mode
       // Clear temperature sample arrays for clean start
       memset(tempSamples, 0, sizeof(tempSamples));
       tempSampleIndex = 0;
@@ -209,6 +214,18 @@ void handleSerialInput() {
         Serial.println(contrast);
       }
       break;
+    case 'W':
+    case 'w':
+      whiteLedOn = !whiteLedOn;  // Toggle white LED state
+      Serial.print(F("White LED: "));
+      Serial.println(whiteLedOn ? F("ON") : F("OFF"));
+      // Update the actual LED if we're in RGB color mode
+      if (currentMode == MODE_RGB_COLOR) {
+        digitalWrite(TCS_LED_PIN, whiteLedOn ? HIGH : LOW);
+      }
+      break;
+    case '\r':  // Enter key
+    case '\n':  // Also handle line feed
     case '?':
     case 'h':
     case 'H':
