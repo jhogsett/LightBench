@@ -57,6 +57,9 @@ Adafruit_MLX90614 mlx = Adafruit_MLX90614();
 OperationMode currentMode = MODE_LIGHT_LEVEL;
 uint8_t contrast = 8;  // Default contrast (0-15)
 bool whiteLedOn = true;  // Default white LED on
+bool autoRotationMode = false;  // Auto rotation mode
+unsigned long autoRotationStart = 0;  // Auto rotation timing
+const unsigned long AUTO_ROTATION_INTERVAL = 20000;  // 20 seconds per mode
 
 // LED color palette for light meter: 4 green, 3 amber, 1 red
 uint32_t meterColors[LED_COUNT] = {
@@ -98,6 +101,72 @@ void displayColorHistory();
 void displayTemperatureHistory();
 uint32_t temperatureToIronColor(float temp);
 uint32_t applyContrast(uint32_t color);
+void handleAutoRotation(unsigned long currentTime);
+void switchToMode(OperationMode newMode);
+
+void switchToMode(OperationMode newMode) {
+  currentMode = newMode;
+  
+  // Clear all LEDs
+  for (int i = 0; i < LED_COUNT; i++) {
+    strip.setPixelColor(i, 0);
+  }
+  strip.show();
+  
+  // Clear mode-specific samples and arrays
+  if (newMode == MODE_LIGHT_LEVEL) {
+    // Light mode doesn't use sampling arrays, just clear LEDs
+  } else if (newMode == MODE_RGB_COLOR) {
+    colorSampleIndex = 0;
+    for (int i = 0; i < 10; i++) {
+      colorSamples[i][0] = 0;
+      colorSamples[i][1] = 0;
+      colorSamples[i][2] = 0;
+    }
+    for (int i = 0; i < LED_COUNT; i++) {
+      colorHistory[i] = 0;
+    }
+  } else if (newMode == MODE_TEMPERATURE) {
+    tempSampleIndex = 0;
+    for (int i = 0; i < 10; i++) {
+      tempSamples[i] = 0;
+    }
+    for (int i = 0; i < LED_COUNT; i++) {
+      tempHistory[i] = 0;
+    }
+  }
+  
+  switch(currentMode) {
+    case MODE_LIGHT_LEVEL:
+      Serial.println(F("Auto-Rotation: Light Level Mode"));
+      break;
+    case MODE_RGB_COLOR:
+      Serial.println(F("Auto-Rotation: RGB Color Mode"));
+      break;
+    case MODE_TEMPERATURE:
+      Serial.println(F("Auto-Rotation: Temperature Mode"));
+      break;
+  }
+}
+
+void handleAutoRotation() {
+  if (!autoRotationMode) return;
+  
+  if (millis() - autoRotationStart >= AUTO_ROTATION_INTERVAL) {
+    // Move to next mode
+    OperationMode nextMode;
+    if (currentMode == MODE_LIGHT_LEVEL) {
+      nextMode = MODE_RGB_COLOR;
+    } else if (currentMode == MODE_RGB_COLOR) {
+      nextMode = MODE_TEMPERATURE;
+    } else {
+      nextMode = MODE_LIGHT_LEVEL;
+    }
+    
+    switchToMode(nextMode);
+    autoRotationStart = millis();
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -132,13 +201,28 @@ void setup() {
   
   // Show startup menu
   showMenu();
+  
+  // Start in auto-rotation mode for standalone operation
+  autoRotationMode = true;
+  autoRotationStart = millis();
+  Serial.println(F("Starting in auto-rotation mode - cycling through all modes every 20 seconds."));
+  Serial.println(F("Press any key to stop auto-rotation and show manual controls."));
 }
 
 void loop() {
   unsigned long currentTime = millis();
   
+  // Handle auto-rotation
+  handleAutoRotation();
+  
   // Handle serial input
   if (Serial.available()) {
+    // Any key stops auto-rotation and shows menu
+    if (autoRotationMode) {
+      autoRotationMode = false;
+      Serial.println(F("Auto-rotation stopped."));
+      showMenu();
+    }
     handleSerialInput();
   }
   
@@ -162,6 +246,7 @@ void showMenu() {
   Serial.println(F("L - Light Level Mode"));
   Serial.println(F("C - RGB Color Mode"));
   Serial.println(F("T - Temperature Mode"));
+  Serial.println(F("R - Toggle Auto Rotation (20s each mode)"));
   Serial.println(F("+ - Increase Contrast"));
   Serial.println(F("- - Decrease Contrast"));
   Serial.println(F("W - Toggle White LED"));
@@ -169,7 +254,9 @@ void showMenu() {
   Serial.print(F("Current contrast: "));
   Serial.print(contrast);
   Serial.print(F(", White LED: "));
-  Serial.println(whiteLedOn ? F("ON") : F("OFF"));
+  Serial.print(whiteLedOn ? F("ON") : F("OFF"));
+  Serial.print(F(", Auto Rotation: "));
+  Serial.println(autoRotationMode ? F("ON") : F("OFF"));
   Serial.println();
 }
 
@@ -222,6 +309,17 @@ void handleSerialInput() {
       // Update the actual LED if we're in RGB color mode
       if (currentMode == MODE_RGB_COLOR) {
         digitalWrite(TCS_LED_PIN, whiteLedOn ? HIGH : LOW);
+      }
+      break;
+    case 'R':
+    case 'r':
+      autoRotationMode = !autoRotationMode;
+      if (autoRotationMode) {
+        autoRotationStart = millis();
+        Serial.println(F("Auto-rotation enabled. Cycling through modes every 20 seconds."));
+        Serial.println(F("Press any key to stop auto-rotation and show menu."));
+      } else {
+        Serial.println(F("Auto-rotation disabled."));
       }
       break;
     case '\r':  // Enter key
